@@ -1,0 +1,182 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* New York Theme (Default) */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.75rem;
+  }
+
+  /* New York Dark Theme */
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+
+  /* Retro Theme - Warm nostalgic colors */
+  .theme-retro {
+    --background: 39 39% 21%;
+    --foreground: 39 39% 95%;
+    --card: 39 39% 24%;
+    --card-foreground: 39 39% 95%;
+    --popover: 39 39% 24%;
+    --popover-foreground: 39 39% 95%;
+    --primary: 45 93% 58%;
+    --primary-foreground: 39 39% 15%;
+    --secondary: 39 39% 27%;
+    --secondary-foreground: 39 39% 95%;
+    --muted: 39 39% 27%;
+    --muted-foreground: 39 39% 75%;
+    --accent: 31 100% 71%;
+    --accent-foreground: 39 39% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 85% 97%;
+    --border: 39 39% 27%;
+    --input: 39 39% 27%;
+    --ring: 45 93% 58%;
+    --radius: 0.5rem;
+  }
+
+  /* Cyberpunk Theme - Neon electric colors */
+  .theme-cyberpunk {
+    --background: 240 10% 8%;
+    --foreground: 180 100% 85%;
+    --card: 240 10% 12%;
+    --card-foreground: 180 100% 85%;
+    --popover: 240 10% 12%;
+    --popover-foreground: 180 100% 85%;
+    --primary: 315 100% 50%;
+    --primary-foreground: 240 10% 8%;
+    --secondary: 240 10% 15%;
+    --secondary-foreground: 180 100% 85%;
+    --muted: 240 10% 15%;
+    --muted-foreground: 180 50% 65%;
+    --accent: 180 100% 50%;
+    --accent-foreground: 240 10% 8%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 240 10% 8%;
+    --border: 240 10% 15%;
+    --input: 240 10% 15%;
+    --ring: 315 100% 50%;
+    --radius: 0.5rem;
+  }
+
+  /* Forest Theme - Natural green tones */
+  .theme-forest {
+    --background: 120 25% 15%;
+    --foreground: 120 15% 90%;
+    --card: 120 25% 18%;
+    --card-foreground: 120 15% 90%;
+    --popover: 120 25% 18%;
+    --popover-foreground: 120 15% 90%;
+    --primary: 142 69% 58%;
+    --primary-foreground: 120 25% 15%;
+    --secondary: 120 25% 21%;
+    --secondary-foreground: 120 15% 90%;
+    --muted: 120 25% 21%;
+    --muted-foreground: 120 15% 70%;
+    --accent: 88 50% 53%;
+    --accent-foreground: 120 25% 15%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 85% 97%;
+    --border: 120 25% 21%;
+    --input: 120 25% 21%;
+    --ring: 142 69% 58%;
+    --radius: 0.5rem;
+  }
+
+  /* Ocean Theme - Deep blue aquatic colors */
+  .theme-ocean {
+    --background: 200 50% 12%;
+    --foreground: 200 20% 92%;
+    --card: 200 50% 15%;
+    --card-foreground: 200 20% 92%;
+    --popover: 200 50% 15%;
+    --popover-foreground: 200 20% 92%;
+    --primary: 195 100% 50%;
+    --primary-foreground: 200 50% 12%;
+    --secondary: 200 50% 18%;
+    --secondary-foreground: 200 20% 92%;
+    --muted: 200 50% 18%;
+    --muted-foreground: 200 20% 72%;
+    --accent: 180 100% 70%;
+    --accent-foreground: 200 50% 12%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 85% 97%;
+    --border: 200 50% 18%;
+    --input: 200 50% 18%;
+    --ring: 195 100% 50%;
+    --radius: 0.5rem;
+  }
+
+  /* Sunset Theme - Warm orange and pink tones */
+  .theme-sunset {
+    --background: 15 25% 18%;
+    --foreground: 15 15% 92%;
+    --card: 15 25% 21%;
+    --card-foreground: 15 15% 92%;
+    --popover: 15 25% 21%;
+    --popover-foreground: 15 15% 92%;
+    --primary: 25 95% 53%;
+    --primary-foreground: 15 25% 18%;
+    --secondary: 15 25% 24%;
+    --secondary-foreground: 15 15% 92%;
+    --muted: 15 25% 24%;
+    --muted-foreground: 15 15% 72%;
+    --accent: 340 82% 52%;
+    --accent-foreground: 15 25% 18%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 85% 97%;
+    --border: 15 25% 24%;
+    --input: 15 25% 24%;
+    --ring: 25 95% 53%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
