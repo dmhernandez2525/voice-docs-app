@@ -1,0 +1,45 @@
+# Voice Docs App - Render Infrastructure Configuration (FREE TIER)
+# ==============================================================
+# Static site deployment for the Voice-Enabled Documentation System.
+#
+# IMPORTANT LIMITATIONS (as of January 2026):
+# - Free static sites have unlimited bandwidth but spin down after inactivity
+# - Custom domains available on free tier
+#
+# Cost: $0/month
+#
+# For production with API backend, add web service and database.
+
+services:
+  # =============================================
+  # Static Site - React/Vite Frontend
+  # =============================================
+  - type: web
+    name: voice-docs-app
+    runtime: static
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    pullRequestPreviewsEnabled: true
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      # Required for Web Speech API
+      - path: /*
+        name: Permissions-Policy
+        value: microphone=(self)
+    routes:
+      # SPA fallback routing
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
