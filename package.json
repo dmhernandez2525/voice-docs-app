@@ -1,7 +1,22 @@
 {
   "name": "voice-docs-app",
+  "version": "0.1.0",
+  "description": "Voice-enabled documentation system with AI-powered search and hands-free interaction using browser-native APIs",
+  "author": "Daniel Hernandez",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dmhernandez2525/voice-docs-app.git"
+  },
+  "keywords": [
+    "voice",
+    "documentation",
+    "speech-recognition",
+    "react",
+    "typescript",
+    "ai-assistant"
+  ],
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
