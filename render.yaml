@@ -16,8 +16,7 @@ services:
   # =============================================
   - type: web
     name: voice-docs-app
-    runtime: static
-    plan: free
+    env: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     pullRequestPreviewsEnabled: true
