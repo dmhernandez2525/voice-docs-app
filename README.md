@@ -1,5 +1,9 @@
 # Voice-Enabled Documentation System
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
+
 A React application with voice conversation capabilities, AI-powered documentation search, and hands-free interaction using browser-native APIs.
 
 ## Features
@@ -30,8 +34,8 @@ Open `http://localhost:5173` and allow microphone permissions when prompted.
 
 ## Tech Stack
 
-- React 18 + TypeScript
-- Vite build system
+- React 19 + TypeScript 5.8
+- Vite 7 build system
 - Tailwind CSS + shadcn/ui
 - Browser Speech APIs (no external services)
 

@@ -1,0 +1,62 @@
+# CodeRabbit Configuration
+# Documentation: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  path_filters:
+    - "!**/*.lock"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/*.min.js"
+    - "!**/coverage/**"
+    - "!**/*.generated.*"
+
+  path_instructions:
+    - path: "src/**/*.tsx"
+      instructions: |
+        Focus on React best practices:
+        - Proper hook usage and dependencies
+        - Component composition patterns
+        - Accessibility (a11y) considerations
+        - TypeScript type safety
+        - Voice/speech API integration patterns
+
+    - path: "src/**/*.ts"
+      instructions: |
+        Check for:
+        - Proper TypeScript types (no 'any')
+        - Error handling patterns
+        - Consistent naming conventions
+        - Web Speech API usage
+
+    - path: "src/hooks/**"
+      instructions: |
+        Review custom hooks for:
+        - Proper cleanup on unmount
+        - Dependency array correctness
+        - Browser API error handling
+
+    - path: "**/*.test.{ts,tsx}"
+      instructions: |
+        Ensure tests are:
+        - Testing behavior, not implementation
+        - Using proper assertions
+        - Covering edge cases
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+      - develop
+
+chat:
+  auto_reply: true
