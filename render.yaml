@@ -16,7 +16,7 @@ services:
   # Static Site - React/Vite Frontend
   # =============================================
   - type: web
-    name: voice-docs-app
+    name: voice-docs-site
     env: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
