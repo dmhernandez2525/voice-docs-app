@@ -134,6 +134,66 @@ dependencies: {
 **Timeline: Weeks 11-18**
 **Dependencies: Phase 2 completion**
 
+### 3.0 PersonaPlex Integration - Document Co-Creation (Coming Soon)
+
+**Overview:** Integrate NVIDIA's PersonaPlex full duplex AI to enable natural, conversational document creation. Instead of rigid dictation modes, users will collaborate with an AI that guides, clarifies, and structures content in real-time.
+
+#### What is PersonaPlex?
+
+PersonaPlex is NVIDIA's open-source **full duplex** conversational AI:
+- **Full Duplex**: Listens and speaks simultaneously
+- **Back-channeling**: Says "uh-huh", "got it" while you speak
+- **Near-zero latency**: <500ms response time
+- **Open source**: Apache 2.0 license
+
+#### Current Experience vs PersonaPlex
+
+**Current Workflow:**
+```
+User enables talk mode → Dictates → Manual editing → Repeat
+```
+
+**With PersonaPlex:**
+```
+User: "I need to write a project proposal for..."
+PersonaPlex: "Okay, I'm listening. What's the project about?"
+User: "It's a mobile app for tracking fitness"
+PersonaPlex: "Got it. Should I start with an executive summary or dive into features?"
+User: "Executive summary first"
+PersonaPlex: "Alright, dictate when ready... [back-channels while user speaks]"
+User: "Actually wait, can you suggest some structure?"
+PersonaPlex: "Sure! How about: Summary, Problem Statement, Proposed Solution, Timeline, Budget?"
+```
+
+#### PersonaPlex Features
+
+| Feature | Priority | Description |
+|---------|----------|-------------|
+| Full duplex conversation | P0 | Simultaneous listening/speaking |
+| Document structure suggestions | P1 | AI proposes outlines |
+| Real-time clarification | P1 | "Did you mean X or Y?" |
+| Context-aware formatting | P1 | Automatically applies headers, lists |
+| Natural interruption | P0 | Change direction mid-sentence |
+| Back-channeling | P1 | Active listening feedback |
+
+#### Implementation Milestones
+
+| ID | Feature | Effort | Dependencies |
+|----|---------|--------|--------------|
+| PPX-001 | PersonaPlex server deployment | M | None |
+| PPX-002 | WebSocket audio streaming | L | PPX-001 |
+| PPX-003 | Document co-creation agent | L | PPX-002 |
+| PPX-004 | Structure suggestion mode | M | PPX-003 |
+| PPX-005 | Integration with existing Talk Mode | M | PPX-002 |
+
+#### Hardware Requirements
+
+- 24GB+ VRAM (Mac M2 Max compatible)
+- 32GB RAM recommended
+- Runs 100% locally
+
+---
+
 ### 3.1 AI-Powered Search
 
 | Feature | Priority | Description |
