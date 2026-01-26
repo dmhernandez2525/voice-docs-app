@@ -76,55 +76,53 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const domNavigator = useRef<DOMNavigator | null>(null);
 
-  // Initialize DOM navigator
+  // Content loaders by data source type
+  const extractFromDOM = () => domNavigator.current!.extractPageContent();
+
+  const fetchFromAPI = async (endpoint: string, headers?: Record<string, string>) => {
+    const response = await fetch(endpoint, { headers: headers || {} });
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    const content = await response.json();
+    return Array.isArray(content) ? content : [content];
+  };
+
+  const loadContentWithFallback = async (
+    loader: () => Promise<DocumentationContent[]> | DocumentationContent[],
+    errorMessage: string
+  ) => {
+    try {
+      const content = await loader();
+      setPageContent(content);
+    } catch (error) {
+      console.warn(errorMessage, error);
+      setPageContent(extractFromDOM());
+    }
+  };
+
+  // Initialize DOM navigator and load content
   useEffect(() => {
     domNavigator.current = new DOMNavigator(
       config.dataSource?.selectors,
       config.navigation
     );
 
-    // Extract page content based on data source type
-    const loadContent = async () => {
-      const dataSource = config.dataSource;
+    const { type, content, endpoint, headers, fetchFn } = config.dataSource || {};
 
-      if (!dataSource || dataSource.type === 'dom') {
-        // Default: extract from DOM
-        const content = domNavigator.current!.extractPageContent();
-        setPageContent(content);
-      } else if (dataSource.type === 'static' && dataSource.content) {
-        // Static content provided directly
-        setPageContent(dataSource.content);
-      } else if (dataSource.type === 'api' && dataSource.endpoint) {
-        // Fetch from API endpoint
-        try {
-          const response = await fetch(dataSource.endpoint, {
-            headers: dataSource.headers || {},
-          });
-          if (response.ok) {
-            const content = await response.json();
-            setPageContent(Array.isArray(content) ? content : [content]);
-          }
-        } catch (error) {
-          console.warn('Failed to fetch content from API:', error);
-          // Fallback to DOM extraction
-          const content = domNavigator.current!.extractPageContent();
-          setPageContent(content);
-        }
-      } else if (dataSource.type === 'custom' && dataSource.fetchFn) {
-        // Use custom fetch function
-        try {
-          const content = await dataSource.fetchFn();
-          setPageContent(content);
-        } catch (error) {
-          console.warn('Failed to fetch content with custom function:', error);
-          // Fallback to DOM extraction
-          const content = domNavigator.current!.extractPageContent();
-          setPageContent(content);
-        }
-      }
+    const loaders: Record<string, () => void> = {
+      dom: () => setPageContent(extractFromDOM()),
+      static: () => content && setPageContent(content),
+      api: () => endpoint && loadContentWithFallback(
+        () => fetchFromAPI(endpoint, headers),
+        'Failed to fetch from API:'
+      ),
+      custom: () => fetchFn && loadContentWithFallback(
+        fetchFn,
+        'Failed to fetch with custom function:'
+      ),
     };
 
-    loadContent();
+    const loader = loaders[type || 'dom'] || loaders.dom;
+    loader();
   }, [config.dataSource, config.navigation]);
 
   // Voice recognition - callback for when speech is finalized
@@ -214,76 +212,87 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
     return success;
   }, [config.navigation, config.callbacks]);
 
-  // Generate AI response
-  const generateResponse = useCallback(async (userMessage: string): Promise<string> => {
-    // Check for navigation commands first
-    const navCommand = parseNavigationCommand(userMessage);
-    if (navCommand) {
-      const success = await handleNavigation(navCommand);
-      if (success) {
-        return `I've navigated you to "${navCommand.label}". Is there anything else you'd like to know?`;
-      } else {
-        return `I couldn't find "${navCommand.label}" on this page. Try asking about the available sections, or I can help you find something else.`;
-      }
-    }
+  // Response generators for different query types
+  const responseGenerators = {
+    navigation: (targets: string[]) =>
+      `You can navigate to these sections: ${targets.slice(0, 5).join(', ')}. Just say "go to [section name]" and I'll take you there!`,
 
-    // Build context from page content
-    const contextText = pageContent.map(c => `${c.title}: ${c.content.slice(0, 500)}`).join('\n\n');
+    pageContent: (sections: string[]) =>
+      `This page contains: ${sections.join(', ')}. Would you like me to tell you more about any of these, or navigate to a specific section?`,
 
-    // Simple keyword-based response (in production, this would use an actual AI)
-    const lowerMessage = userMessage.toLowerCase();
-
-    // Navigation help
-    if (lowerMessage.includes('where') || lowerMessage.includes('navigate') || lowerMessage.includes('go to')) {
-      const targets = domNavigator.current?.getAvailableTargets() || [];
-      if (targets.length > 0) {
-        return `You can navigate to these sections: ${targets.slice(0, 5).join(', ')}. Just say "go to [section name]" and I'll take you there!`;
-      }
-    }
-
-    // What's on this page
-    if (lowerMessage.includes('what') && (lowerMessage.includes('page') || lowerMessage.includes('here'))) {
-      if (pageContent.length > 0) {
-        const sections = pageContent.slice(0, 5).map(c => c.title).join(', ');
-        return `This page contains: ${sections}. Would you like me to tell you more about any of these, or navigate to a specific section?`;
-      }
-    }
-
-    // Help
-    if (lowerMessage.includes('help') || lowerMessage.includes('can you')) {
-      return `I can help you with:
+    help: () => `I can help you with:
 • **Navigate** - Say "go to [section]" to jump to any part of this page
 • **Explore** - Ask "what's on this page" to see available content
 • **Read** - I can read content aloud for you
 • **Search** - Ask about specific topics and I'll find relevant information
 
-What would you like to do?`;
-    }
+What would you like to do?`,
 
-    // Default response based on context
-    if (contextText) {
-      // Simple keyword matching (would be replaced with actual AI)
-      const words = userMessage.toLowerCase().split(/\s+/);
-      for (const content of pageContent) {
-        const contentLower = content.content.toLowerCase();
-        const titleLower = content.title.toLowerCase();
+    contentMatch: (title: string, content: string) =>
+      `Based on the "${title}" section: ${content.slice(0, 300)}...\n\nWould you like me to navigate you to this section, or tell you more?`,
 
-        for (const word of words) {
-          if (word.length > 3 && (contentLower.includes(word) || titleLower.includes(word))) {
-            return `Based on the "${content.title}" section: ${content.content.slice(0, 300)}...
-
-Would you like me to navigate you to this section, or tell you more?`;
-          }
-        }
-      }
-    }
-
-    return `I'm here to help you navigate and understand this page. You can ask me:
+    default: () => `I'm here to help you navigate and understand this page. You can ask me:
 • About the content on this page
 • To navigate to specific sections
 • To read content aloud
 
-What would you like to know?`;
+What would you like to know?`,
+  };
+
+  // Find matching content for user query
+  const findContentMatch = (query: string) => {
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    return pageContent.find(content =>
+      words.some(word =>
+        content.content.toLowerCase().includes(word) ||
+        content.title.toLowerCase().includes(word)
+      )
+    );
+  };
+
+  // Generate AI response
+  const generateResponse = useCallback(async (userMessage: string): Promise<string> => {
+    const lowerMessage = userMessage.toLowerCase();
+
+    // Handle navigation commands
+    const navCommand = parseNavigationCommand(userMessage);
+    if (navCommand) {
+      const success = await handleNavigation(navCommand);
+      return success
+        ? `I've navigated you to "${navCommand.label}". Is there anything else you'd like to know?`
+        : `I couldn't find "${navCommand.label}" on this page. Try asking about the available sections, or I can help you find something else.`;
+    }
+
+    // Query matchers - first match wins
+    const matchers: Array<{ test: () => boolean; response: () => string }> = [
+      {
+        test: () => ['where', 'navigate', 'go to'].some(k => lowerMessage.includes(k)),
+        response: () => {
+          const targets = domNavigator.current?.getAvailableTargets() || [];
+          return targets.length > 0 ? responseGenerators.navigation(targets) : responseGenerators.default();
+        },
+      },
+      {
+        test: () => lowerMessage.includes('what') && ['page', 'here'].some(k => lowerMessage.includes(k)),
+        response: () => pageContent.length > 0
+          ? responseGenerators.pageContent(pageContent.slice(0, 5).map(c => c.title))
+          : responseGenerators.default(),
+      },
+      {
+        test: () => ['help', 'can you'].some(k => lowerMessage.includes(k)),
+        response: responseGenerators.help,
+      },
+      {
+        test: () => pageContent.length > 0,
+        response: () => {
+          const match = findContentMatch(userMessage);
+          return match ? responseGenerators.contentMatch(match.title, match.content) : responseGenerators.default();
+        },
+      },
+    ];
+
+    const matched = matchers.find(m => m.test());
+    return matched ? matched.response() : responseGenerators.default();
   }, [pageContent, parseNavigationCommand, handleNavigation]);
 
   // Send message

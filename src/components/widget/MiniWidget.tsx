@@ -56,6 +56,40 @@ export function MiniWidget({ config: userConfig, onClose, className = '' }: Mini
     silenceTimeout: config.voice?.silenceTimeout,
   });
 
+  // Handle navigation command
+  const handleNavigation = async (query: string): Promise<string | null> => {
+    const navMatch = query.match(/(?:go to|navigate to|show me)\s+(.+)/i);
+    if (!navMatch || !navigatorRef.current) return null;
+
+    const target = navMatch[1].trim();
+    const navTarget = navigatorRef.current.findBestMatch(target);
+
+    if (!navTarget) return `Couldn't find "${target}". Try asking about what's on this page.`;
+
+    const success = await navigatorRef.current.navigateTo(navTarget);
+    return success ? `Navigated to "${navTarget.label}"` : `Couldn't find "${target}". Try asking about what's on this page.`;
+  };
+
+  // Find content matching query
+  const findMatchingContent = (query: string) =>
+    pageContent.find(c =>
+      c.title.toLowerCase().includes(query) || c.content.toLowerCase().includes(query)
+    );
+
+  // Generate response based on query type
+  const generateMiniResponse = (query: string): string => {
+    const lowerQuery = query.toLowerCase();
+
+    const responses: Array<{ test: () => boolean; response: () => string }> = [
+      { test: () => lowerQuery.includes('help'), response: () => 'Ask me to navigate ("go to section"), or about page content.' },
+      { test: () => lowerQuery.includes('what') && lowerQuery.includes('page'), response: () => `This page has: ${pageContent.slice(0, 3).map(c => c.title).join(', ')}` },
+      { test: () => !!findMatchingContent(lowerQuery), response: () => findMatchingContent(lowerQuery)!.content.slice(0, 150) + '...' },
+    ];
+
+    const match = responses.find(r => r.test());
+    return match ? match.response() : 'Say "go to [section]" to navigate, or ask about the page content.';
+  };
+
   const handleSubmit = useCallback(async () => {
     const query = input.trim();
     if (!query || isProcessing) return;
@@ -65,43 +99,9 @@ export function MiniWidget({ config: userConfig, onClose, className = '' }: Mini
     setShowResponse(true);
 
     try {
-      // Check for navigation
-      const navMatch = query.match(/(?:go to|navigate to|show me)\s+(.+)/i);
-      if (navMatch && navigatorRef.current) {
-        const target = navMatch[1].trim();
-        const navTarget = navigatorRef.current.findBestMatch(target);
-
-        if (navTarget) {
-          const success = await navigatorRef.current.navigateTo(navTarget);
-          if (success) {
-            setResponse(`Navigated to "${navTarget.label}"`);
-            setInput('');
-            return;
-          }
-        }
-        setResponse(`Couldn't find "${target}". Try asking about what's on this page.`);
-        return;
-      }
-
-      // Generate simple response
-      const lowerQuery = query.toLowerCase();
-
-      if (lowerQuery.includes('help')) {
-        setResponse('Ask me to navigate ("go to section"), or about page content.');
-      } else if (lowerQuery.includes('what') && lowerQuery.includes('page')) {
-        const sections = pageContent.slice(0, 3).map(c => c.title).join(', ');
-        setResponse(`This page has: ${sections}`);
-      } else {
-        // Search content
-        for (const content of pageContent) {
-          if (content.title.toLowerCase().includes(lowerQuery) ||
-              content.content.toLowerCase().includes(lowerQuery)) {
-            setResponse(content.content.slice(0, 150) + '...');
-            return;
-          }
-        }
-        setResponse('Say "go to [section]" to navigate, or ask about the page content.');
-      }
+      const navResponse = await handleNavigation(query);
+      setResponse(navResponse ?? generateMiniResponse(query));
+      if (navResponse) setInput('');
     } finally {
       setIsProcessing(false);
       setInput('');
