@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import DocumentationPage from './components/DocumentationPage';
 import { LandingPage } from './components/LandingPage';
+import { VoiceStocksDemo } from './pages/VoiceStocksDemo';
 import { NotificationProvider } from './components/NotificationProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -16,6 +17,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/app" element={<DocumentationPage />} />
+                <Route path="/voice-stocks-demo" element={<VoiceStocksDemo />} />
               </Routes>
             </div>
           </BrowserRouter>
