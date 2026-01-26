@@ -83,13 +83,48 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
       config.navigation
     );
 
-    // Extract page content
-    if (config.dataSource?.type === 'dom') {
-      const content = domNavigator.current.extractPageContent();
-      setPageContent(content);
-    } else if (config.dataSource?.type === 'static' && config.dataSource.content) {
-      setPageContent(config.dataSource.content);
-    }
+    // Extract page content based on data source type
+    const loadContent = async () => {
+      const dataSource = config.dataSource;
+
+      if (!dataSource || dataSource.type === 'dom') {
+        // Default: extract from DOM
+        const content = domNavigator.current!.extractPageContent();
+        setPageContent(content);
+      } else if (dataSource.type === 'static' && dataSource.content) {
+        // Static content provided directly
+        setPageContent(dataSource.content);
+      } else if (dataSource.type === 'api' && dataSource.endpoint) {
+        // Fetch from API endpoint
+        try {
+          const response = await fetch(dataSource.endpoint, {
+            headers: dataSource.headers || {},
+          });
+          if (response.ok) {
+            const content = await response.json();
+            setPageContent(Array.isArray(content) ? content : [content]);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch content from API:', error);
+          // Fallback to DOM extraction
+          const content = domNavigator.current!.extractPageContent();
+          setPageContent(content);
+        }
+      } else if (dataSource.type === 'custom' && dataSource.fetchFn) {
+        // Use custom fetch function
+        try {
+          const content = await dataSource.fetchFn();
+          setPageContent(content);
+        } catch (error) {
+          console.warn('Failed to fetch content with custom function:', error);
+          // Fallback to DOM extraction
+          const content = domNavigator.current!.extractPageContent();
+          setPageContent(content);
+        }
+      }
+    };
+
+    loadContent();
   }, [config.dataSource, config.navigation]);
 
   // Voice recognition - callback for when speech is finalized
