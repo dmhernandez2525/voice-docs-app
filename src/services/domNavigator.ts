@@ -537,8 +537,562 @@ export class DOMNavigator {
   }
 }
 
-// Singleton instance for global use
+// ============================================================================
+// Voice Stocks Extensions
+// ============================================================================
+
+import type {
+  PageMap,
+  Section as VSSection,
+  NavItem as VSNavItem,
+  ButtonInfo,
+  FormInfo,
+  FormFieldInfo,
+  MediaInfo,
+  LandmarkInfo,
+  ElementContext,
+} from '../types/voiceStocks';
+
+/**
+ * Extended DOM Navigator with Voice Stocks capabilities
+ */
+export class VoiceStocksDOMNavigator extends DOMNavigator {
+  private vsPageMap: PageMap | null = null;
+  private vsIdCounter = 0;
+  private mutationObserver: MutationObserver | null = null;
+
+  constructor(selectors?: DOMSelectors, config?: NavigationConfig) {
+    super(selectors, config);
+    this.setupMutationObserver();
+  }
+
+  /**
+   * Generate a Voice Stocks PageMap with comprehensive element mapping
+   */
+  generatePageMap(root: HTMLElement = document.body): PageMap {
+    this.vsPageMap = {
+      sections: this.scanVSSections(root),
+      navigation: this.scanVSNavigation(root),
+      buttons: this.scanVSButtons(root),
+      forms: this.scanVSForms(root),
+      media: this.scanVSMedia(root),
+      landmarks: this.scanVSLandmarks(root),
+      lastUpdated: Date.now(),
+    };
+
+    return this.vsPageMap;
+  }
+
+  /**
+   * Get the current PageMap, regenerating if stale
+   */
+  getVSPageMap(): PageMap {
+    if (!this.vsPageMap || Date.now() - this.vsPageMap.lastUpdated > 5000) {
+      return this.generatePageMap();
+    }
+    return this.vsPageMap;
+  }
+
+  /**
+   * Find element by semantic description with AI-friendly matching
+   */
+  findElementByDescription(description: string): HTMLElement | null {
+    const map = this.getVSPageMap();
+    const descLower = description.toLowerCase();
+
+    // Build searchable items from all element types
+    const searchables: Array<{ element: HTMLElement; text: string; score: number }> = [];
+
+    map.sections.forEach((s) => {
+      const text = `${s.title} ${s.description || ''}`.toLowerCase();
+      searchables.push({ element: s.element, text, score: this.matchScore(descLower, text) });
+    });
+
+    map.navigation.forEach((n) => {
+      searchables.push({ element: n.element, text: n.text.toLowerCase(), score: this.matchScore(descLower, n.text.toLowerCase()) });
+    });
+
+    map.buttons.forEach((b) => {
+      const text = `${b.text} ${b.ariaLabel || ''}`.toLowerCase();
+      searchables.push({ element: b.element, text, score: this.matchScore(descLower, text) });
+    });
+
+    map.landmarks.forEach((l) => {
+      const text = `${l.role} ${l.label || ''}`.toLowerCase();
+      searchables.push({ element: l.element, text, score: this.matchScore(descLower, text) });
+    });
+
+    // Sort by score and return best match
+    searchables.sort((a, b) => b.score - a.score);
+
+    if (searchables.length > 0 && searchables[0].score > 0.3) {
+      return searchables[0].element;
+    }
+
+    // Fallback to CSS selector or ID
+    try {
+      const bySelector = document.querySelector(description);
+      if (bySelector instanceof HTMLElement) return bySelector;
+    } catch {
+      // Invalid selector
+    }
+
+    const byId = document.getElementById(description);
+    if (byId) return byId;
+
+    return null;
+  }
+
+  /**
+   * Get detailed context about what an element does
+   */
+  getElementContext(element: HTMLElement): ElementContext {
+    const tagName = element.tagName.toLowerCase();
+    const role = element.getAttribute('role') || this.inferElementRole(element);
+    const ariaLabel = element.getAttribute('aria-label');
+    const text = element.textContent?.trim().substring(0, 100) || '';
+
+    let purpose = ariaLabel || '';
+    let interactionHint = '';
+
+    switch (tagName) {
+      case 'a':
+        purpose = purpose || `Link to ${(element as HTMLAnchorElement).href || 'another page'}`;
+        interactionHint = 'Click to navigate';
+        break;
+      case 'button':
+        purpose = purpose || text || 'Interactive button';
+        interactionHint = 'Click to activate';
+        break;
+      case 'input':
+        purpose = purpose || this.inferInputPurpose(element as HTMLInputElement);
+        interactionHint = 'Enter information';
+        break;
+      case 'form':
+        purpose = purpose || 'Form for submitting information';
+        interactionHint = 'Fill out and submit';
+        break;
+      case 'nav':
+        purpose = purpose || 'Navigation menu';
+        interactionHint = 'Browse available links';
+        break;
+      case 'section':
+      case 'article':
+      case 'div':
+        purpose = purpose || this.inferSectionPurpose(element);
+        interactionHint = 'Read content';
+        break;
+      default:
+        purpose = purpose || role || `${tagName} element`;
+        interactionHint = 'Interact with element';
+    }
+
+    return {
+      element,
+      purpose,
+      interactionHint,
+      relatedElements: this.findRelatedElementIds(element),
+      path: this.buildCssPath(element),
+    };
+  }
+
+  /**
+   * Find elements matching a capability (project-search, contact, navigate, etc.)
+   */
+  findElementsForCapability(capability: string): HTMLElement[] {
+    const map = this.getVSPageMap();
+    const capLower = capability.toLowerCase();
+    const results: HTMLElement[] = [];
+
+    const matchers: Record<string, (map: PageMap) => HTMLElement[]> = {
+      contact: (m) => {
+        const section = m.sections.find((s) =>
+          s.title.toLowerCase().includes('contact') || s.id.toLowerCase().includes('contact')
+        );
+        const form = m.forms.find((f) =>
+          f.name?.toLowerCase().includes('contact') || f.element.id.toLowerCase().includes('contact')
+        );
+        return [section?.element, form?.element].filter((e): e is HTMLElement => !!e);
+      },
+      projects: (m) =>
+        m.sections
+          .filter((s) =>
+            ['project', 'portfolio', 'work'].some((k) =>
+              s.title.toLowerCase().includes(k) || s.id.toLowerCase().includes(k)
+            )
+          )
+          .map((s) => s.element),
+      about: (m) =>
+        m.sections
+          .filter((s) =>
+            ['about', 'bio', 'introduction'].some((k) =>
+              s.title.toLowerCase().includes(k) || s.id.toLowerCase().includes(k)
+            )
+          )
+          .map((s) => s.element),
+      skills: (m) =>
+        m.sections
+          .filter((s) =>
+            ['skill', 'expertise', 'technologies', 'tech stack'].some((k) =>
+              s.title.toLowerCase().includes(k) || s.id.toLowerCase().includes(k)
+            )
+          )
+          .map((s) => s.element),
+      navigation: (m) => m.navigation.map((n) => n.element),
+    };
+
+    for (const [key, finder] of Object.entries(matchers)) {
+      if (capLower.includes(key)) {
+        results.push(...finder(map));
+      }
+    }
+
+    if (results.length === 0) {
+      const element = this.findElementByDescription(capability);
+      if (element) results.push(element);
+    }
+
+    return results;
+  }
+
+  /**
+   * Invalidate the Voice Stocks page map cache
+   */
+  invalidateVSCache(): void {
+    this.vsPageMap = null;
+  }
+
+  /**
+   * Clean up resources
+   */
+  destroyVS(): void {
+    this.mutationObserver?.disconnect();
+    this.vsPageMap = null;
+  }
+
+  // ============================================================================
+  // Private Scanning Methods
+  // ============================================================================
+
+  private scanVSSections(root: HTMLElement): VSSection[] {
+    const sections: VSSection[] = [];
+    const seen = new Set<HTMLElement>();
+
+    // Semantic sections
+    root.querySelectorAll('section, article, main, aside, header, footer, [role="region"]').forEach((el) => {
+      if (el instanceof HTMLElement && !seen.has(el)) {
+        seen.add(el);
+        sections.push(this.createVSSection(el));
+      }
+    });
+
+    // Sections by ID (common portfolio pattern)
+    root.querySelectorAll('[id]').forEach((el) => {
+      if (el instanceof HTMLElement && !seen.has(el) && this.isLikelySection(el)) {
+        seen.add(el);
+        sections.push(this.createVSSection(el));
+      }
+    });
+
+    return sections;
+  }
+
+  private scanVSNavigation(root: HTMLElement): VSNavItem[] {
+    const items: VSNavItem[] = [];
+
+    root.querySelectorAll('nav a, [role="navigation"] a, header a').forEach((el) => {
+      if (el instanceof HTMLAnchorElement) {
+        const href = el.getAttribute('href') || '';
+        items.push({
+          id: this.generateVSId('nav'),
+          element: el,
+          text: el.textContent?.trim() || el.getAttribute('aria-label') || 'Link',
+          href: href || undefined,
+          isExternal: href.startsWith('http') && !href.includes(window.location.hostname),
+          isActive: el.classList.contains('active') || el.getAttribute('aria-current') === 'page',
+        });
+      }
+    });
+
+    return items;
+  }
+
+  private scanVSButtons(root: HTMLElement): ButtonInfo[] {
+    const buttons: ButtonInfo[] = [];
+
+    root.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]').forEach((el) => {
+      if (el instanceof HTMLElement) {
+        const isInput = el instanceof HTMLInputElement;
+        buttons.push({
+          id: this.generateVSId('btn'),
+          element: el,
+          text: isInput ? (el as HTMLInputElement).value : el.textContent?.trim() || '',
+          ariaLabel: el.getAttribute('aria-label') || undefined,
+          type: this.getButtonType(el),
+          isDisabled: el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true',
+        });
+      }
+    });
+
+    return buttons;
+  }
+
+  private scanVSForms(root: HTMLElement): FormInfo[] {
+    const forms: FormInfo[] = [];
+
+    root.querySelectorAll('form').forEach((form) => {
+      if (form instanceof HTMLFormElement) {
+        const fields: FormFieldInfo[] = [];
+
+        form.querySelectorAll('input, textarea, select').forEach((input) => {
+          if (input instanceof HTMLElement) {
+            const inputEl = input as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+            let label: string | undefined;
+
+            if (input.id) {
+              const labelEl = form.querySelector(`label[for="${input.id}"]`);
+              label = labelEl?.textContent?.trim();
+            }
+
+            const placeholder = 'placeholder' in inputEl ? inputEl.placeholder : undefined;
+
+            fields.push({
+              id: input.id || inputEl.name || this.generateVSId('field'),
+              element: input,
+              name: inputEl.name || input.id || '',
+              type: input.tagName.toLowerCase() === 'input' ? (input as HTMLInputElement).type : input.tagName.toLowerCase(),
+              label,
+              placeholder: placeholder || undefined,
+              isRequired: inputEl.required || input.getAttribute('aria-required') === 'true',
+            });
+          }
+        });
+
+        forms.push({
+          id: this.generateVSId('form'),
+          element: form,
+          name: form.name || form.id || undefined,
+          action: form.action || undefined,
+          fields,
+        });
+      }
+    });
+
+    return forms;
+  }
+
+  private scanVSMedia(root: HTMLElement): MediaInfo[] {
+    const media: MediaInfo[] = [];
+
+    root.querySelectorAll('img, video, audio, iframe').forEach((el) => {
+      if (el instanceof HTMLElement) {
+        const tagName = el.tagName.toLowerCase();
+        let type: MediaInfo['type'] = 'image';
+        if (tagName === 'video') type = 'video';
+        else if (tagName === 'audio') type = 'audio';
+        else if (tagName === 'iframe') type = 'iframe';
+
+        media.push({
+          id: this.generateVSId('media'),
+          element: el,
+          type,
+          src: (el as HTMLImageElement).src || undefined,
+          alt: (el as HTMLImageElement).alt || undefined,
+          title: el.title || undefined,
+        });
+      }
+    });
+
+    return media;
+  }
+
+  private scanVSLandmarks(root: HTMLElement): LandmarkInfo[] {
+    const landmarks: LandmarkInfo[] = [];
+    const roles = ['banner', 'navigation', 'main', 'complementary', 'contentinfo', 'search', 'form', 'region'];
+
+    roles.forEach((role) => {
+      root.querySelectorAll(`[role="${role}"]`).forEach((el) => {
+        if (el instanceof HTMLElement) {
+          landmarks.push({
+            id: this.generateVSId('landmark'),
+            element: el,
+            role,
+            label: el.getAttribute('aria-label') || undefined,
+          });
+        }
+      });
+    });
+
+    // Semantic HTML5 elements
+    const semanticMappings: Record<string, string> = {
+      header: 'banner',
+      nav: 'navigation',
+      main: 'main',
+      aside: 'complementary',
+      footer: 'contentinfo',
+    };
+
+    Object.entries(semanticMappings).forEach(([tag, role]) => {
+      root.querySelectorAll(tag).forEach((el) => {
+        if (el instanceof HTMLElement && !el.hasAttribute('role') && !landmarks.some((l) => l.element === el)) {
+          landmarks.push({
+            id: this.generateVSId('landmark'),
+            element: el,
+            role,
+            label: el.getAttribute('aria-label') || undefined,
+          });
+        }
+      });
+    });
+
+    return landmarks;
+  }
+
+  // ============================================================================
+  // Private Helper Methods
+  // ============================================================================
+
+  private createVSSection(el: HTMLElement): VSSection {
+    const heading = el.querySelector('h1, h2, h3, h4, h5, h6');
+    const title = heading?.textContent?.trim() || el.getAttribute('aria-label') || el.id || el.tagName.toLowerCase();
+
+    return {
+      id: el.id || this.generateVSId('section'),
+      element: el,
+      title,
+      description: el.getAttribute('aria-description') || undefined,
+      boundingRect: el.getBoundingClientRect(),
+      children: Array.from(el.children).filter((c) => c.id).map((c) => c.id),
+      level: heading ? parseInt(heading.tagName[1]) : 0,
+    };
+  }
+
+  private generateVSId(prefix: string): string {
+    return `vs-${prefix}-${++this.vsIdCounter}`;
+  }
+
+  private matchScore(query: string, text: string): number {
+    if (!query || !text) return 0;
+    if (text.includes(query)) return 1;
+
+    const queryWords = query.split(/\s+/);
+    const textWords = text.split(/\s+/);
+    let matched = 0;
+
+    queryWords.forEach((qw) => {
+      if (textWords.some((tw) => tw.includes(qw) || qw.includes(tw))) matched++;
+    });
+
+    return matched / queryWords.length;
+  }
+
+  private inferElementRole(el: HTMLElement): string {
+    const roleMap: Record<string, string> = {
+      button: 'button',
+      a: 'link',
+      input: 'textbox',
+      nav: 'navigation',
+      main: 'main',
+      header: 'banner',
+      footer: 'contentinfo',
+    };
+    return roleMap[el.tagName.toLowerCase()] || 'generic';
+  }
+
+  private inferInputPurpose(input: HTMLInputElement): string {
+    const type = input.type;
+    const name = input.name?.toLowerCase() || '';
+
+    if (type === 'email' || name.includes('email')) return 'Email input';
+    if (type === 'password') return 'Password input';
+    if (type === 'tel' || name.includes('phone')) return 'Phone input';
+    if (name.includes('name')) return 'Name input';
+    if (type === 'search') return 'Search input';
+
+    return `${type || 'text'} input`;
+  }
+
+  private inferSectionPurpose(el: HTMLElement): string {
+    const id = el.id?.toLowerCase() || '';
+    const className = typeof el.className === 'string' ? el.className.toLowerCase() : '';
+
+    if (id.includes('hero') || className.includes('hero')) return 'Hero section';
+    if (id.includes('about') || className.includes('about')) return 'About section';
+    if (id.includes('project') || className.includes('project')) return 'Projects section';
+    if (id.includes('skill') || className.includes('skill')) return 'Skills section';
+    if (id.includes('contact') || className.includes('contact')) return 'Contact section';
+
+    return 'Content section';
+  }
+
+  private findRelatedElementIds(el: HTMLElement): string[] {
+    const related: string[] = [];
+    ['aria-labelledby', 'aria-describedby', 'aria-controls'].forEach((attr) => {
+      const value = el.getAttribute(attr);
+      if (value) related.push(...value.split(' '));
+    });
+    return related.filter((id) => document.getElementById(id));
+  }
+
+  private buildCssPath(el: HTMLElement): string {
+    const path: string[] = [];
+    let current: HTMLElement | null = el;
+
+    while (current && current !== document.body) {
+      const selector = current.tagName.toLowerCase();
+      if (current.id) {
+        path.unshift(`#${current.id}`);
+        break;
+      }
+      path.unshift(selector);
+      current = current.parentElement;
+    }
+
+    return path.join(' > ');
+  }
+
+  private getButtonType(el: HTMLElement): ButtonInfo['type'] {
+    if (el.tagName.toLowerCase() === 'a') return 'link';
+    const type = (el as HTMLButtonElement).type;
+    if (type === 'submit') return 'submit';
+    if (type === 'reset') return 'reset';
+    return 'button';
+  }
+
+  private isLikelySection(el: HTMLElement): boolean {
+    const rect = el.getBoundingClientRect();
+    if (rect.height < 100 || rect.width < 200) return false;
+
+    const text = el.textContent?.trim() || '';
+    if (text.length < 50) return false;
+
+    const id = el.id.toLowerCase();
+    const keywords = ['hero', 'about', 'project', 'skill', 'experience', 'education', 'contact', 'portfolio', 'work', 'service'];
+    return keywords.some((kw) => id.includes(kw));
+  }
+
+  private setupMutationObserver(): void {
+    this.mutationObserver = new MutationObserver(() => {
+      this.invalidateVSCache();
+    });
+
+    if (typeof document !== 'undefined' && document.body) {
+      this.mutationObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['id', 'class', 'aria-label', 'role'],
+      });
+    }
+  }
+}
+
+// ============================================================================
+// Singleton Instances
+// ============================================================================
+
 let navigatorInstance: DOMNavigator | null = null;
+let vsNavigatorInstance: VoiceStocksDOMNavigator | null = null;
 
 export function getDOMNavigator(
   selectors?: DOMSelectors,
@@ -550,6 +1104,18 @@ export function getDOMNavigator(
   return navigatorInstance;
 }
 
+export function getVoiceStocksDOMNavigator(
+  selectors?: DOMSelectors,
+  config?: NavigationConfig
+): VoiceStocksDOMNavigator {
+  if (!vsNavigatorInstance) {
+    vsNavigatorInstance = new VoiceStocksDOMNavigator(selectors, config);
+  }
+  return vsNavigatorInstance;
+}
+
 export function resetDOMNavigator(): void {
   navigatorInstance = null;
+  vsNavigatorInstance?.destroyVS();
+  vsNavigatorInstance = null;
 }
