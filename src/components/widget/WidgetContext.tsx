@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { WidgetConfig, WidgetState, NavigationTarget } from '../../types/widget';
+import type { WidgetConfig, WidgetState, NavigationTarget, WidgetContextType } from '../../types/widget';
 import { defaultWidgetConfig } from '../../types/widget';
 import { DOMNavigator } from '../../services/domNavigator';
 import { WidgetContext } from '../../contexts/WidgetContext';
