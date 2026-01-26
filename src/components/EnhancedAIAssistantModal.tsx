@@ -23,14 +23,20 @@ import {
   MessageCircle,
   Volume2,
   VolumeX,
-
+  Map,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 import { useNotificationContext } from '../hooks/useNotificationContext';
 
 import { aiService } from '../services/aiService';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { useContinuousVoiceRecognition } from '../hooks/useContinuousVoiceRecognition';
+import { useVoiceCommands } from '../hooks/useVoiceCommands';
+import { useGuidedTour } from '../hooks/useGuidedTour';
 import type { DirectAnswer, AIResponse } from '../types/documentation';
+import type { ConversationMessage as VoiceStocksMessage } from '../types/voiceStocks';
 
 interface EnhancedAIAssistantModalProps {
   isOpen: boolean;
@@ -59,10 +65,62 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [mode, setMode] = useState<ConversationMode>('manual');
   const [isTalkModeActive, setIsTalkModeActive] = useState(false);
+  const [voiceStocksEnabled, setVoiceStocksEnabled] = useState(false);
 
   const notification = useNotificationContext();
   const speechSynthesis = useSpeechSynthesis();
-  
+
+  // Voice Stocks - Guided Tour
+  const guidedTour = useGuidedTour();
+
+  // Convert conversation to Voice Stocks format for command context
+  const voiceStocksHistory: VoiceStocksMessage[] = conversation.map(msg => ({
+    id: msg.id,
+    role: msg.type === 'user' ? 'user' : 'assistant',
+    content: msg.content,
+    timestamp: msg.timestamp.getTime(),
+  }));
+
+  // Speak function for tour and command responses
+  const speakText = useCallback((text: string) => {
+    if (speechSynthesis.isSupported) {
+      const cleanText = text
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/#{1,6}\s/g, '')
+        .replace(/\n\n/g, '. ')
+        .replace(/\n/g, ' ');
+      speechSynthesis.speak(cleanText, { rate: 0.9, pitch: 1, volume: 0.8 });
+    }
+  }, [speechSynthesis]);
+
+  // Voice Stocks - Voice Commands
+  const voiceCommands = useVoiceCommands({
+    conversationHistory: voiceStocksHistory,
+    onSpeak: speakText,
+    onCommandHandled: (result) => {
+      if (result.response) {
+        // Add command response to conversation
+        const assistantMessage: ConversationMessage = {
+          id: `assistant-cmd-${Date.now()}`,
+          type: 'assistant',
+          content: result.response,
+          timestamp: new Date(),
+        };
+        setConversation(prev => [...prev, assistantMessage]);
+      }
+    },
+  });
+
+  // Connect guided tour to speech synthesis
+  useEffect(() => {
+    if (voiceStocksEnabled) {
+      return guidedTour.onSpeak(speakText);
+    }
+  }, [voiceStocksEnabled, guidedTour, speakText]);
+
   // Continuous voice recognition for talk mode
   const voiceRecognition = useContinuousVoiceRecognition(
     async (transcript: string, confidence: number) => {
@@ -105,6 +163,33 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
         notification.info('Voice listening stopped', { title: '🎤 Voice Control' });
       }
       return;
+    }
+
+    // Voice Stocks: Try command router first
+    if (voiceStocksEnabled) {
+      const commandResult = await voiceCommands.processCommand(transcript);
+      if (commandResult.handled) {
+        // Command was handled by router - add user message and let onCommandHandled add response
+        const userMessage: ConversationMessage = {
+          id: `user-${Date.now()}`,
+          type: 'user',
+          content: transcript,
+          timestamp: new Date(),
+          confidence,
+        };
+        setConversation(prev => [...prev, userMessage]);
+
+        // Restart listening in talk mode after command
+        if (mode === 'talk' && isTalkModeActive && voiceRecognitionRef.current?.isSupported) {
+          setTimeout(() => {
+            if (isTalkModeActive) {
+              voiceRecognitionRef.current?.startListening().catch(console.error);
+            }
+          }, 500);
+        }
+        return;
+      }
+      // If not handled, fall through to AI processing
     }
 
     // Add user message to conversation
@@ -160,7 +245,7 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
       setIsProcessingAI(false);
       voiceRecognitionRef.current?.completeProcessing();
     }
-  }, [mode, isTalkModeActive, notification, speechSynthesis, voiceRecognition]);
+  }, [mode, isTalkModeActive, notification, speechSynthesis, voiceRecognition, voiceStocksEnabled, voiceCommands]);
 
   // Speak AI response using browser TTS
   const speakResponse = useCallback(async (text: string) => {
@@ -308,8 +393,12 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
       setIsTalkModeActive(false);
       voiceRecognitionRef.current?.stopListening();
       speechSynthesisRef.current?.stop();
+      // End guided tour when modal closes
+      if (guidedTour.isActive) {
+        guidedTour.endTour();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, guidedTour]);
 
   // Format silence timer display
   const formatSilenceTimer = (ms: number) => {
@@ -338,6 +427,12 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
               <Badge variant={mode === 'talk' ? 'default' : 'secondary'} className="text-xs">
                 {mode === 'talk' ? 'Talk Mode' : 'Manual Mode'}
               </Badge>
+              {voiceStocksEnabled && (
+                <Badge variant="default" className="text-xs bg-purple-600">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Voice Stocks
+                </Badge>
+              )}
               {speechSynthesis.isSpeaking && (
                 <Badge variant="outline" className="text-xs animate-pulse">
                   <Volume2 className="h-3 w-3 mr-1" />
@@ -374,6 +469,30 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
                   </>
                 )}
               </Button>
+
+              {/* Voice Stocks Toggle */}
+              <Button
+                onClick={() => setVoiceStocksEnabled(!voiceStocksEnabled)}
+                variant={voiceStocksEnabled ? 'default' : 'outline'}
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                {voiceStocksEnabled ? 'Voice Stocks On' : 'Voice Stocks Off'}
+              </Button>
+
+              {/* Tour Control */}
+              {voiceStocksEnabled && !guidedTour.isActive && (
+                <Button
+                  onClick={() => guidedTour.startAutoTour()}
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  <Map className="h-4 w-4" />
+                  Start Tour
+                </Button>
+              )}
 
               {speechSynthesis.isSpeaking && (
                 <Button
@@ -416,6 +535,63 @@ const EnhancedAIAssistantModal: React.FC<EnhancedAIAssistantModalProps> = ({
               <div className="text-gray-900 dark:text-white">
                 <span className="font-medium">{voiceRecognition.finalTranscript}</span>
                 <span className="text-gray-500 italic">{voiceRecognition.currentTranscript}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Tour Progress UI */}
+          {guidedTour.isActive && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border mt-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Map className="h-4 w-4 text-purple-500" />
+                  <span className="text-sm font-medium">
+                    {guidedTour.currentStep?.title || 'Guided Tour'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {guidedTour.progress.current} / {guidedTour.progress.total}
+                  </Badge>
+                  <Button
+                    onClick={guidedTour.endTour}
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-2">
+                <div
+                  className="bg-purple-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${guidedTour.progress.percent}%` }}
+                />
+              </div>
+              {guidedTour.currentStep?.description && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  {guidedTour.currentStep.description}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={guidedTour.previousStep}
+                  variant="outline"
+                  size="sm"
+                  disabled={guidedTour.currentStepIndex === 0}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Back
+                </Button>
+                <Button
+                  onClick={guidedTour.nextStep}
+                  variant="default"
+                  size="sm"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
               </div>
             </div>
           )}
