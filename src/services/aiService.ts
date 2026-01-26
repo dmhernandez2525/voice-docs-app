@@ -1,7 +1,11 @@
 import type { DirectAnswer } from '../types/documentation';
+import type { VoiceStocksTrainingData, Capability } from '../types/voiceStocks';
+import { browserAI } from './browserAI';
 
 export class AIService {
   private static instance: AIService;
+  private trainingData: VoiceStocksTrainingData | null = null;
+  private useVoiceStocksMode = false;
 
   static getInstance(): AIService {
     if (!AIService.instance) {
@@ -10,12 +14,149 @@ export class AIService {
     return AIService.instance;
   }
 
+  /**
+   * Initialize Voice Stocks mode with training data
+   */
+  async initializeVoiceStocks(trainingData: VoiceStocksTrainingData): Promise<void> {
+    this.trainingData = trainingData;
+    this.useVoiceStocksMode = true;
+    await browserAI.initialize(trainingData);
+    console.log('[AIService] Voice Stocks mode initialized');
+  }
+
+  /**
+   * Check if Voice Stocks mode is active
+   */
+  isVoiceStocksMode(): boolean {
+    return this.useVoiceStocksMode && this.trainingData !== null;
+  }
+
+  /**
+   * Get the greeting message
+   */
+  getGreeting(): string {
+    if (this.trainingData?.templates?.greeting) {
+      return this.trainingData.templates.greeting;
+    }
+    return "Hello! I'm here to help. What would you like to know?";
+  }
+
+  /**
+   * Route a question to check if it matches a capability
+   */
+  routeCapability(question: string): Capability | null {
+    if (!this.trainingData?.capabilities) return null;
+
+    const qLower = question.toLowerCase();
+
+    for (const capability of this.trainingData.capabilities) {
+      const hasMatch = capability.triggers.some(trigger =>
+        qLower.includes(trigger.toLowerCase())
+      );
+      if (hasMatch) {
+        return capability;
+      }
+    }
+
+    return null;
+  }
+
   async answerQuestion(question: string, context?: string[]): Promise<DirectAnswer> {
+    // Voice Stocks mode: use Browser AI and training data
+    if (this.useVoiceStocksMode && this.trainingData) {
+      return this.answerWithVoiceStocks(question, context);
+    }
+
+    // Legacy mode: use mock responses
+    return this.answerWithMock(question, context);
+  }
+
+  /**
+   * Answer using Voice Stocks (Browser AI + Training Data)
+   */
+  private async answerWithVoiceStocks(question: string, context?: string[]): Promise<DirectAnswer> {
+    const contextStr = context?.join('\n') || '';
+
+    try {
+      // Generate response using Browser AI
+      const answer = await browserAI.generateResponse(question, contextStr);
+
+      // Find matching FAQ for follow-ups
+      const matchingFaq = this.findMatchingFaq(question);
+      const followUpQuestions = matchingFaq?.followUps || this.generateFollowUpQuestions(question.toLowerCase());
+
+      // Extract actionable steps if present
+      const actionableSteps = this.extractActionableSteps(answer);
+
+      // Generate sources from training data
+      const sources = this.generateSourcesFromTrainingData(question);
+
+      return {
+        answer,
+        confidence: matchingFaq ? 0.95 : 0.85,
+        sources,
+        followUpQuestions,
+        actionableSteps,
+      };
+    } catch (error) {
+      console.error('[AIService] Voice Stocks answer failed:', error);
+      // Fallback to mock
+      return this.answerWithMock(question, context);
+    }
+  }
+
+  /**
+   * Find a matching FAQ from training data
+   */
+  private findMatchingFaq(question: string): VoiceStocksTrainingData['knowledge']['faqs'][0] | null {
+    if (!this.trainingData?.knowledge?.faqs) return null;
+
+    const qLower = question.toLowerCase();
+
+    for (const faq of this.trainingData.knowledge.faqs) {
+      // Check keywords
+      const keywordMatch = faq.keywords.some(kw =>
+        qLower.includes(kw.toLowerCase())
+      );
+      if (keywordMatch) return faq;
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate sources from training data documents
+   */
+  private generateSourcesFromTrainingData(question: string) {
+    if (!this.trainingData?.knowledge?.documents) {
+      return this.generateMockSources(question.toLowerCase());
+    }
+
+    const qLower = question.toLowerCase();
+
+    return this.trainingData.knowledge.documents
+      .filter(doc => {
+        const tags = doc.tags || [];
+        return tags.some(tag => qLower.includes(tag.toLowerCase()));
+      })
+      .slice(0, 3)
+      .map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        content: `Reference: ${doc.path}`,
+        tags: doc.tags,
+      }));
+  }
+
+  /**
+   * Legacy mock answer method
+   */
+  private async answerWithMock(question: string, context?: string[]): Promise<DirectAnswer> {
     // Log context for future extensibility
     if (context && context.length > 0) {
       console.log('Processing question with context:', context.length, 'items');
     }
-    
+
     // Simulate AI processing delay
     await new Promise(resolve => setTimeout(resolve, 1500));
 
