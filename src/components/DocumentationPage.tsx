@@ -22,7 +22,8 @@ import {
 import EnhancedAIAssistantModal from './EnhancedAIAssistantModal';
 import VoiceSettingsPanel from './VoiceSettingsPanel';
 import ThemeSwitcher from './ThemeSwitcher';
-import { KeyboardShortcuts, useKeyboardShortcuts } from './KeyboardShortcuts';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { VoiceCommandReference } from './VoiceCommandReference';
 import { CommandPalette } from './CommandPalette';
 import { mockDocumentation } from '../data/mockDocumentation';

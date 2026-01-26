@@ -71,13 +71,13 @@ export function MiniWidget({ config: userConfig, onClose, className = '' }: Mini
   };
 
   // Find content matching query
-  const findMatchingContent = (query: string) =>
+  const findMatchingContent = useCallback((query: string) =>
     pageContent.find(c =>
       c.title.toLowerCase().includes(query) || c.content.toLowerCase().includes(query)
-    );
+    ), [pageContent]);
 
   // Generate response based on query type
-  const generateMiniResponse = (query: string): string => {
+  const generateMiniResponse = useCallback((query: string): string => {
     const lowerQuery = query.toLowerCase();
 
     const responses: Array<{ test: () => boolean; response: () => string }> = [
@@ -88,7 +88,7 @@ export function MiniWidget({ config: userConfig, onClose, className = '' }: Mini
 
     const match = responses.find(r => r.test());
     return match ? match.response() : 'Say "go to [section]" to navigate, or ask about the page content.';
-  };
+  }, [pageContent, findMatchingContent]);
 
   const handleSubmit = useCallback(async () => {
     const query = input.trim();
@@ -106,7 +106,7 @@ export function MiniWidget({ config: userConfig, onClose, className = '' }: Mini
       setIsProcessing(false);
       setInput('');
     }
-  }, [input, isProcessing, isListening, stopListening, pageContent]);
+  }, [input, isProcessing, isListening, stopListening, generateMiniResponse]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {

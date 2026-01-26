@@ -196,6 +196,28 @@ export interface WidgetState {
   unreadCount: number;
 }
 
+// Widget context type (used by WidgetProvider and useWidget)
+export interface WidgetContextType {
+  config: Required<WidgetConfig>;
+  state: WidgetState;
+  navigator: unknown; // DOMNavigator instance - using unknown to avoid circular dep
+
+  // Actions
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  minimize: () => void;
+  maximize: () => void;
+  navigateTo: (target: NavigationTarget) => Promise<boolean>;
+  speak: (text: string) => void;
+  stopSpeaking: () => void;
+
+  // State setters
+  setIsListening: (listening: boolean) => void;
+  setIsSpeaking: (speaking: boolean) => void;
+  setIsProcessing: (processing: boolean) => void;
+}
+
 // Default configuration
 export const defaultWidgetConfig: Required<WidgetConfig> = {
   instanceId: 'voicedocs-default',

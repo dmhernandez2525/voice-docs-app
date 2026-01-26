@@ -1,6 +1,7 @@
 // VoiceDocs Widget - Embeddable Voice Assistant
 export { VoiceDocsWidget, default as Widget } from './VoiceDocsWidget';
-export { WidgetProvider, useWidget } from './WidgetContext';
+export { WidgetProvider } from './WidgetContext';
+export { useWidget } from '../../hooks/useWidget';
 export { MiniWidget } from './MiniWidget';
 
 // Re-export types
