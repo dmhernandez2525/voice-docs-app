@@ -1,0 +1,12 @@
+name: voice-docs-app
+
+services:
+  app:
+    build: .
+    ports:
+      - "3010:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
