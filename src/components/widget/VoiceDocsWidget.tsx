@@ -86,7 +86,7 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
     return Array.isArray(content) ? content : [content];
   };
 
-  const loadContentWithFallback = async (
+  const loadContentWithFallback = useCallback(async (
     loader: () => Promise<DocumentationContent[]> | DocumentationContent[],
     errorMessage: string
   ) => {
@@ -97,7 +97,7 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
       console.warn(errorMessage, error);
       setPageContent(extractFromDOM());
     }
-  };
+  }, []);
 
   // Initialize DOM navigator and load content
   useEffect(() => {
@@ -123,7 +123,7 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
 
     const loader = loaders[type || 'dom'] || loaders.dom;
     loader();
-  }, [config.dataSource, config.navigation]);
+  }, [config.dataSource, config.navigation, loadContentWithFallback]);
 
   // Voice recognition - callback for when speech is finalized
   const handleVoiceResult = useCallback((text: string) => {
@@ -213,7 +213,7 @@ export function VoiceDocsWidget({ config: userConfig }: VoiceDocsWidgetProps) {
   }, [config.navigation, config.callbacks]);
 
   // Response generators for different query types
-  const responseGenerators = {
+  const responseGenerators = useMemo(() => ({
     navigation: (targets: string[]) =>
       `You can navigate to these sections: ${targets.slice(0, 5).join(', ')}. Just say "go to [section name]" and I'll take you there!`,
 
@@ -237,10 +237,10 @@ What would you like to do?`,
 • To read content aloud
 
 What would you like to know?`,
-  };
+  }), []);
 
   // Find matching content for user query
-  const findContentMatch = (query: string) => {
+  const findContentMatch = useCallback((query: string) => {
     const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     return pageContent.find(content =>
       words.some(word =>
@@ -248,7 +248,7 @@ What would you like to know?`,
         content.title.toLowerCase().includes(word)
       )
     );
-  };
+  }, [pageContent]);
 
   // Generate AI response
   const generateResponse = useCallback(async (userMessage: string): Promise<string> => {
@@ -293,7 +293,7 @@ What would you like to know?`,
 
     const matched = matchers.find(m => m.test());
     return matched ? matched.response() : responseGenerators.default();
-  }, [pageContent, parseNavigationCommand, handleNavigation]);
+  }, [pageContent, parseNavigationCommand, handleNavigation, findContentMatch, responseGenerators]);
 
   // Send message
   const sendMessage = useCallback(async () => {
