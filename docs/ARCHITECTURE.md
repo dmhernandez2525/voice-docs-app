@@ -378,6 +378,211 @@ src/
     └── ...
 ```
 
+## Voice Stocks Extension
+
+Voice Stocks extends VoiceDocs with visual guidance, browser AI, and portfolio-specific capabilities.
+
+### Voice Stocks Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Voice Stocks System                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐ │
+│  │  Voice Input    │  │   Browser AI    │  │      Voice Output           │ │
+│  │  (Web Speech)   │──│  (Chrome API)   │──│      (TTS)                  │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘ │
+│          │                    │                         │                   │
+│          ▼                    ▼                         ▼                   │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐ │
+│  │ Voice Command   │  │  Training Data  │  │   Highlight System          │ │
+│  │    Router       │  │   + Context     │  │   (Spotlight/Scroll/Point)  │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘ │
+│          │                    │                         │                   │
+│          └────────────────────┼─────────────────────────┘                   │
+│                               ▼                                             │
+│                    ┌─────────────────────┐                                  │
+│                    │    DOM Navigator    │                                  │
+│                    │   (Extended)        │                                  │
+│                    │  • PageMap gen      │                                  │
+│                    │  • Element context  │                                  │
+│                    │  • Capability match │                                  │
+│                    └─────────────────────┘                                  │
+│                               │                                             │
+│                               ▼                                             │
+│                    ┌─────────────────────┐                                  │
+│                    │    Guided Tour      │                                  │
+│                    │   System            │                                  │
+│                    └─────────────────────┘                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### New Components
+
+#### 1. VoiceStocksDOMNavigator
+**Location:** `src/services/domNavigator.ts`
+
+Extended DOM navigator with Voice Stocks capabilities:
+
+```typescript
+class VoiceStocksDOMNavigator extends DOMNavigator {
+  generatePageMap(): PageMap;           // Full semantic page mapping
+  findElementByDescription(desc): HTMLElement;  // AI-friendly search
+  getElementContext(el): ElementContext;        // What element does
+  findElementsForCapability(cap): HTMLElement[]; // Capability routing
+}
+```
+
+**PageMap Structure:**
+```typescript
+interface PageMap {
+  sections: Section[];      // Page sections with titles
+  navigation: NavItem[];    // Nav links
+  buttons: ButtonInfo[];    // Interactive buttons
+  forms: FormInfo[];        // Input forms
+  media: MediaInfo[];       // Images/videos
+  landmarks: LandmarkInfo[]; // ARIA landmarks
+  lastUpdated: number;
+}
+```
+
+#### 2. Browser AI Service
+**Location:** `src/services/browserAI.ts`
+
+Integrates Chrome Prompt API (Gemini Nano) for on-device AI:
+
+```typescript
+class BrowserAIService {
+  isAvailable(): Promise<boolean>;
+  createSession(systemPrompt): Promise<AISession>;
+  generateResponse(question, context): Promise<string>;
+  interpretPage(html): Promise<PageInterpretation>;
+  matchIntentToElement(query, elements): Promise<string | null>;
+}
+```
+
+**Fallback Strategy:**
+1. FAQ keyword matching (fast)
+2. Pattern-based response (medium)
+3. Browser AI generation (slow but flexible)
+
+#### 3. Training Data System
+**Location:** `src/data/portfolioTrainingData.ts`
+
+Structured knowledge base for contextual responses:
+
+```typescript
+interface VoiceStocksTrainingData {
+  identity: {
+    name: string;        // "Daniel's Portfolio Assistant"
+    role: string;        // Professional description
+    personality: string; // Tone and style
+    greeting: string;    // Welcome message
+  };
+  knowledge: {
+    faqs: FAQ[];         // Question-answer pairs
+    facts: Fact[];       // Key data points
+    documents: DocumentRef[]; // External content
+  };
+  capabilities: Capability[]; // What assistant can do
+  templates: ResponseTemplates; // Fallback messages
+}
+```
+
+#### 4. Visual Highlight System (Planned)
+**Location:** `src/services/highlightSystem.ts`
+
+Visual feedback for DOM navigation:
+
+- `spotlight(element)` - Glowing highlight with dimmed background
+- `scrollTo(element)` - Smooth scroll with positioning
+- `pointTo(element)` - Animated arrow indicator
+- `pulse(element)` - Pulsing ring animation
+
+#### 5. Guided Tour System (Planned)
+**Location:** `src/services/guidedTour.ts`
+
+Automated page walkthroughs:
+
+```typescript
+interface TourStep {
+  target: string;       // CSS selector
+  title: string;        // Step title
+  description: string;  // What this section does
+  voiceScript: string;  // TTS narration
+  action: 'spotlight' | 'scroll' | 'point';
+}
+```
+
+### Voice Command Categories
+
+| Category | Examples | Handler |
+|----------|----------|---------|
+| Navigation | "go to projects", "show me contact" | DOM Navigator |
+| Tour | "give me a tour", "next step" | Guided Tour |
+| Query | "what skills does Daniel have?" | Browser AI |
+| System | "stop listening", "repeat" | Voice Engine |
+
+### Data Flow
+
+```
+User Voice Input
+       │
+       ▼
+┌──────────────────┐
+│ Voice Recognition │
+└──────────────────┘
+       │
+       ▼
+┌──────────────────┐     ┌────────────────┐
+│ Command Router   │────▶│ Navigation Cmd │──▶ DOM Navigator + Highlight
+└──────────────────┘     └────────────────┘
+       │
+       │                 ┌────────────────┐
+       └────────────────▶│ Tour Command   │──▶ Guided Tour System
+       │                 └────────────────┘
+       │
+       │                 ┌────────────────┐
+       └────────────────▶│ Query          │──▶ Browser AI + Training Data
+                         └────────────────┘
+                                │
+                                ▼
+                         ┌────────────────┐
+                         │ TTS Response   │
+                         └────────────────┘
+```
+
+### File Structure (Voice Stocks Additions)
+
+```
+src/
+├── types/
+│   └── voiceStocks.ts          # Voice Stocks type definitions
+├── services/
+│   ├── domNavigator.ts         # Extended with VoiceStocksDOMNavigator
+│   ├── browserAI.ts            # Chrome Prompt API integration
+│   ├── highlightSystem.ts      # Visual highlight effects (planned)
+│   └── guidedTour.ts           # Tour system (planned)
+├── data/
+│   └── portfolioTrainingData.ts # Sample portfolio training data
+└── hooks/
+    ├── useGuidedTour.ts        # Tour state management (planned)
+    └── useVoiceCommands.ts     # Command routing (planned)
+```
+
+### Browser AI Requirements
+
+Chrome Prompt API requires:
+- Chrome 127+ (or Canary/Dev channel)
+- Flag enabled: `chrome://flags/#prompt-api-for-gemini-nano`
+- Model downloaded (automatic on first use)
+
+Graceful degradation when unavailable:
+1. FAQ matching still works
+2. Pattern-based responses work
+3. Navigation commands work
+4. Only complex queries are limited
+
 ## Future Enhancements
 
 See [ROADMAP.md](./ROADMAP.md) for planned features including:
