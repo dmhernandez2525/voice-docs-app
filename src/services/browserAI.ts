@@ -1,8 +1,8 @@
 /**
  * Browser AI Service
  *
- * Integrates with Chrome's built-in Prompt API (Gemini Nano) for on-device AI processing.
- * Provides fallback strategies when browser AI is unavailable.
+ * Uses Chrome's built-in Prompt API (Gemini Nano) for intelligent intent detection
+ * and dynamic response generation. Falls back to keyword matching when unavailable.
  *
  * Chrome Prompt API requires: chrome://flags/#prompt-api-for-gemini-nano
  */
@@ -16,27 +16,77 @@ import type {
   FAQ,
 } from '../types/voiceStocks';
 
+// Intent types for voice command classification
+export type IntentType =
+  | 'navigation'
+  | 'tour_start'
+  | 'tour_next'
+  | 'tour_previous'
+  | 'tour_end'
+  | 'tour_skip'
+  | 'system_stop'
+  | 'system_help'
+  | 'system_repeat'
+  | 'system_clear'
+  | 'conversation'
+  | 'unknown';
+
+export interface IntentResult {
+  intent: IntentType;
+  confidence: number;
+  target?: string;
+  originalText: string;
+}
+
+// Action types for response generation
+export type ActionType =
+  | 'navigate'
+  | 'tour_start'
+  | 'tour_step'
+  | 'tour_end'
+  | 'tour_next'
+  | 'tour_previous'
+  | 'error'
+  | 'help'
+  | 'stop'
+  | 'clear';
+
+export interface ActionContext {
+  target?: string;
+  section?: string;
+  description?: string;
+  error?: string;
+  alreadyActive?: boolean;
+  [key: string]: unknown;
+}
+
 // Chrome Prompt API type declarations
+interface LanguageModelSession {
+  prompt: (text: string, options?: { responseConstraint?: object; signal?: AbortSignal }) => Promise<string>;
+  promptStreaming?: (input: string, options?: { signal?: AbortSignal }) => ReadableStream<string> | AsyncIterable<string>;
+  destroy: () => void;
+}
+
+interface LanguageModelAPI {
+  availability?: (options?: object) => Promise<'available' | 'downloadable' | 'downloading' | 'unavailable'>;
+  capabilities?: () => Promise<{
+    available: 'readily' | 'after-download' | 'no';
+    defaultTopK?: number;
+    maxTopK?: number;
+    defaultTemperature?: number;
+  }>;
+  create?: (options?: {
+    systemPrompt?: string;
+    topK?: number;
+    temperature?: number;
+  }) => Promise<LanguageModelSession>;
+}
+
 declare global {
   interface Window {
+    LanguageModel?: LanguageModelAPI;
     ai?: {
-      languageModel?: {
-        capabilities?: () => Promise<{
-          available: 'readily' | 'after-download' | 'no';
-          defaultTopK?: number;
-          maxTopK?: number;
-          defaultTemperature?: number;
-        }>;
-        create?: (options?: {
-          systemPrompt?: string;
-          topK?: number;
-          temperature?: number;
-        }) => Promise<{
-          prompt: (input: string) => Promise<string>;
-          promptStreaming?: (input: string) => ReadableStream<string>;
-          destroy: () => void;
-        }>;
-      };
+      languageModel?: LanguageModelAPI;
     };
   }
 }
@@ -45,7 +95,9 @@ export class BrowserAIService {
   private static instance: BrowserAIService;
   private capabilities: BrowserAICapabilities | null = null;
   private activeSession: AISession | null = null;
+  private intentSession: LanguageModelSession | null = null;
   private trainingData: VoiceStocksTrainingData | null = null;
+  private initPromise: Promise<boolean> | null = null;
 
   private constructor() {}
 
@@ -56,14 +108,64 @@ export class BrowserAIService {
     return BrowserAIService.instance;
   }
 
+  private getAPI(): LanguageModelAPI | null {
+    if (typeof window === 'undefined') return null;
+    return window.LanguageModel || window.ai?.languageModel || null;
+  }
+
   /**
-   * Initialize the service with training data
+   * Initialize the service with optional training data
    */
-  async initialize(trainingData?: VoiceStocksTrainingData): Promise<void> {
+  async initialize(trainingData?: VoiceStocksTrainingData): Promise<boolean> {
     if (trainingData) {
       this.trainingData = trainingData;
     }
-    await this.checkCapabilities();
+
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      const available = await this.checkCapabilities();
+      if (!available.isAvailable) return false;
+
+      const api = this.getAPI();
+      if (!api?.create) return false;
+
+      try {
+        this.intentSession = await api.create({
+          temperature: 0.1,
+          topK: 1,
+          systemPrompt: this.getIntentSystemPrompt(),
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  private getIntentSystemPrompt(): string {
+    return `You are an intent classifier for a voice-controlled documentation website.
+Classify user input into one of these intents:
+
+INTENTS:
+- navigation: User wants to go to a section or page (projects, about, skills, contact, etc.)
+- tour_start: User wants to start a guided tour
+- tour_next: User wants to go to the next step in a tour
+- tour_previous: User wants to go back in the tour
+- tour_end: User wants to stop/end the tour
+- tour_skip: User wants to skip to a specific section in the tour
+- system_stop: User wants to stop listening/speaking
+- system_help: User wants help or to know what commands are available
+- system_repeat: User wants to hear the last response again
+- system_clear: User wants to clear highlights or reset
+- conversation: User is asking a question or making conversation (not a command)
+
+Respond with ONLY a JSON object in this exact format:
+{"intent": "intent_name", "confidence": 0.95, "target": "optional_target"}
+
+The target field should contain the destination for navigation or tour_skip intents.`;
   }
 
   /**
@@ -80,21 +182,30 @@ export class BrowserAIService {
       supportsStreaming: false,
     };
 
-    try {
-      if (window.ai?.languageModel?.capabilities) {
-        const caps = await window.ai.languageModel.capabilities();
+    const api = this.getAPI();
+    if (!api) return this.capabilities;
 
+    try {
+      // Try new availability API first
+      if (api.availability) {
+        const status = await api.availability();
+        this.capabilities = {
+          isAvailable: status === 'available',
+          supportsPromptAPI: true,
+          supportsStreaming: true,
+        };
+      } else if (api.capabilities) {
+        // Fall back to capabilities API
+        const caps = await api.capabilities();
         this.capabilities = {
           isAvailable: caps.available === 'readily' || caps.available === 'after-download',
           supportsPromptAPI: true,
           supportsStreaming: true,
           maxTokens: caps.maxTopK,
         };
-
-        console.log('[BrowserAI] Capabilities:', this.capabilities);
       }
-    } catch (error) {
-      console.warn('[BrowserAI] Chrome Prompt API not available:', error);
+    } catch {
+      // API not available
     }
 
     return this.capabilities;
@@ -109,18 +220,236 @@ export class BrowserAIService {
   }
 
   /**
+   * Detect intent from user input using AI or fallback
+   */
+  async detectIntent(text: string): Promise<IntentResult> {
+    const trimmed = text.trim().toLowerCase();
+
+    // Try browser AI first
+    if (this.intentSession) {
+      try {
+        const response = await this.intentSession.prompt(
+          `Classify this user input: "${text}"`,
+          {
+            responseConstraint: {
+              type: 'object',
+              properties: {
+                intent: { type: 'string' },
+                confidence: { type: 'number' },
+                target: { type: 'string' },
+              },
+              required: ['intent', 'confidence'],
+            },
+          }
+        );
+
+        const parsed = JSON.parse(response);
+        return {
+          intent: parsed.intent as IntentType,
+          confidence: parsed.confidence,
+          target: parsed.target,
+          originalText: text,
+        };
+      } catch {
+        // Fall back to basic detection
+      }
+    }
+
+    // Fallback: Use basic keyword matching
+    return this.basicIntentDetection(trimmed, text);
+  }
+
+  private basicIntentDetection(normalized: string, original: string): IntentResult {
+    // Tour intents
+    if (this.containsAny(normalized, ['tour', 'show me around', 'walk me through', 'guide me'])) {
+      if (this.containsAny(normalized, ['start', 'begin', 'give', 'take me', 'want'])) {
+        return { intent: 'tour_start', confidence: 0.8, originalText: original };
+      }
+      if (this.containsAny(normalized, ['end', 'stop', 'finish', 'quit', 'exit'])) {
+        return { intent: 'tour_end', confidence: 0.8, originalText: original };
+      }
+    }
+
+    if (this.containsAny(normalized, ['next', 'continue', 'go on', 'forward'])) {
+      return { intent: 'tour_next', confidence: 0.7, originalText: original };
+    }
+
+    if (this.containsAny(normalized, ['previous', 'back', 'go back', 'before'])) {
+      return { intent: 'tour_previous', confidence: 0.7, originalText: original };
+    }
+
+    if (this.containsAny(normalized, ['skip to', 'jump to', 'go to section'])) {
+      const target = this.extractTarget(normalized);
+      return { intent: 'tour_skip', confidence: 0.7, target, originalText: original };
+    }
+
+    // Navigation intents
+    if (this.containsAny(normalized, ['go to', 'navigate', 'show me', 'take me to', 'open', 'scroll to'])) {
+      const target = this.extractTarget(normalized);
+      return { intent: 'navigation', confidence: 0.7, target, originalText: original };
+    }
+
+    // System intents
+    if (this.containsAny(normalized, ['stop', 'pause', 'quiet', 'shut up', 'silence'])) {
+      return { intent: 'system_stop', confidence: 0.8, originalText: original };
+    }
+
+    if (this.containsAny(normalized, ['help', 'what can you', 'commands', 'what do you'])) {
+      return { intent: 'system_help', confidence: 0.8, originalText: original };
+    }
+
+    if (this.containsAny(normalized, ['repeat', 'say again', 'what did you say', 'pardon'])) {
+      return { intent: 'system_repeat', confidence: 0.8, originalText: original };
+    }
+
+    if (this.containsAny(normalized, ['clear', 'dismiss', 'hide'])) {
+      return { intent: 'system_clear', confidence: 0.7, originalText: original };
+    }
+
+    // Default to conversation
+    return { intent: 'conversation', confidence: 0.5, originalText: original };
+  }
+
+  private containsAny(text: string, keywords: string[]): boolean {
+    return keywords.some(keyword => text.includes(keyword));
+  }
+
+  private extractTarget(text: string): string {
+    const patterns = [
+      /(?:go to|navigate to|show me|take me to|skip to|jump to|open|scroll to)\s+(?:the\s+)?(.+)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) {
+        return match[1].trim();
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * Generate a contextual response for an action
+   */
+  async generateActionResponse(
+    action: ActionType,
+    context: ActionContext
+  ): Promise<string> {
+    const prompt = this.buildActionPrompt(action, context);
+
+    // Try browser AI first
+    if (this.intentSession) {
+      try {
+        const response = await this.intentSession.prompt(prompt);
+        if (response && response.trim()) {
+          return response.trim();
+        }
+      } catch {
+        // Fall through to fallback
+      }
+    }
+
+    // Fallback to contextual defaults
+    return this.getFallbackResponse(action, context);
+  }
+
+  private buildActionPrompt(action: ActionType, context: ActionContext): string {
+    const identity = this.trainingData?.identity;
+    const baseContext = identity
+      ? `You are ${identity.name}, ${identity.role}. ${identity.personality || ''}`
+      : `You are a friendly AI assistant for this documentation website.`;
+
+    const styleNote = `Keep responses concise (1-2 sentences max) and conversational.`;
+
+    switch (action) {
+      case 'navigate':
+        return `${baseContext}
+${styleNote}
+The user just navigated to "${context.target}".
+Generate a brief, friendly confirmation. Don't be robotic.`;
+
+      case 'tour_start':
+        if (context.alreadyActive) {
+          return `${baseContext}
+${styleNote}
+A tour is already in progress. Tell them they can say "next" to continue or "end tour" to stop.`;
+        }
+        return `${baseContext}
+${styleNote}
+The user is starting a guided tour of the website.
+Generate an enthusiastic but brief welcome. Mention they can say "next" or "stop".`;
+
+      case 'tour_step':
+        return `${baseContext}
+${styleNote}
+The user is on a tour step about "${context.section}".
+Section content: ${context.description || 'A section of the website'}
+Generate engaging narration for this section (2-3 sentences). Be informative and personable.`;
+
+      case 'tour_end':
+        return `${baseContext}
+${styleNote}
+The user just ended the tour.
+Generate a friendly goodbye that encourages them to explore or ask questions.`;
+
+      case 'error':
+        return `${baseContext}
+${styleNote}
+Something went wrong: ${context.error}
+Generate a helpful, apologetic response with a suggestion.`;
+
+      case 'help':
+        return `${baseContext}
+${styleNote}
+The user asked for help with voice commands.
+List the main things you can do: navigate, give tours, answer questions.
+Keep it conversational, not a boring list.`;
+
+      default:
+        return `${baseContext}
+${styleNote}
+Action: ${action}
+Context: ${JSON.stringify(context)}
+Generate an appropriate brief response.`;
+    }
+  }
+
+  private getFallbackResponse(action: ActionType, context: ActionContext): string {
+    switch (action) {
+      case 'navigate':
+        return `Here's ${context.target}.`;
+      case 'tour_start':
+        if (context.alreadyActive) {
+          return "A tour is already in progress. Say 'next' to continue or 'end tour' to stop.";
+        }
+        return "Let me show you around! Say 'next' to continue or 'stop' anytime.";
+      case 'tour_step':
+        return context.description || `This is the ${context.section} section.`;
+      case 'tour_end':
+        return "Tour complete! Feel free to explore or ask me anything.";
+      case 'error':
+        return "Sorry, I ran into an issue. Try that again?";
+      case 'help':
+        return "I can help you navigate, give tours, or answer questions. What would you like?";
+      default:
+        return "How can I help you?";
+    }
+  }
+
+  /**
    * Create an AI session with a system prompt
    */
   async createSession(systemPrompt: string): Promise<AISession | null> {
     const caps = await this.checkCapabilities();
+    const api = this.getAPI();
 
-    if (!caps.isAvailable || !window.ai?.languageModel?.create) {
-      console.warn('[BrowserAI] Cannot create session - API not available');
+    if (!caps.isAvailable || !api?.create) {
       return null;
     }
 
     try {
-      const session = await window.ai.languageModel.create({
+      const session = await api.create({
         systemPrompt,
         temperature: 0.7,
       });
@@ -129,14 +458,13 @@ export class BrowserAIService {
         id: `session-${Date.now()}`,
         systemPrompt,
         prompt: session.prompt.bind(session),
-        promptStreaming: session.promptStreaming?.bind(session),
+        promptStreaming: session.promptStreaming?.bind(session) as AISession['promptStreaming'],
         destroy: session.destroy.bind(session),
       };
 
       this.activeSession = aiSession;
       return aiSession;
-    } catch (error) {
-      console.error('[BrowserAI] Failed to create session:', error);
+    } catch {
       return null;
     }
   }
@@ -173,8 +501,8 @@ export class BrowserAIService {
 
         const response = await session.prompt(prompt);
         return response;
-      } catch (error) {
-        console.error('[BrowserAI] Generation failed:', error);
+      } catch {
+        // Fall through
       }
     }
 
@@ -208,8 +536,7 @@ export class BrowserAIService {
 
         session.destroy();
         return this.parseInterpretation(response);
-      } catch (error) {
-        console.error('[BrowserAI] Page interpretation failed:', error);
+      } catch {
         session.destroy();
       }
     }
@@ -247,8 +574,7 @@ export class BrowserAIService {
         if (match && match !== 'null' && elements.some((e) => e.id === match)) {
           return match;
         }
-      } catch (error) {
-        console.error('[BrowserAI] Intent matching failed:', error);
+      } catch {
         session.destroy();
       }
     }
@@ -265,6 +591,18 @@ export class BrowserAIService {
       this.activeSession.destroy();
       this.activeSession = null;
     }
+  }
+
+  /**
+   * Destroy all sessions and reset
+   */
+  destroy(): void {
+    this.destroySession();
+    if (this.intentSession) {
+      this.intentSession.destroy();
+      this.intentSession = null;
+    }
+    this.initPromise = null;
   }
 
   /**
@@ -362,7 +700,7 @@ guide users to the relevant sections. Always be helpful and friendly.`;
 
     // Generic fallback
     return templates?.fallback ||
-      "I'm not sure about that specific detail. Would you like me to help you navigate to a relevant section, or would you prefer to contact directly?";
+      "I'm not sure about that specific detail. Would you like me to help you navigate to a relevant section?";
   }
 
   private parseInterpretation(response: string): PageInterpretation {
@@ -496,4 +834,21 @@ guide users to the relevant sections. Always be helpful and friendly.`;
   }
 }
 
+// Singleton instance
 export const browserAI = BrowserAIService.getInstance();
+
+// Convenience functions for external use
+export async function detectIntent(text: string): Promise<IntentResult> {
+  return browserAI.detectIntent(text);
+}
+
+export async function generateActionResponse(
+  action: ActionType,
+  context: ActionContext
+): Promise<string> {
+  return browserAI.generateActionResponse(action, context);
+}
+
+export async function isBrowserAIAvailable(): Promise<boolean> {
+  return browserAI.isAvailable();
+}

@@ -3,6 +3,7 @@
  *
  * Manages guided tours through a webpage, combining DOM Navigator
  * and Highlight System to walk users through content.
+ * Uses AI-generated voice scripts for dynamic, contextual narration.
  */
 
 import type {
@@ -24,9 +25,11 @@ import {
   scrollAndHighlight,
   clearHighlights,
 } from './highlightSystem';
+import { generateActionResponse } from './browserAI';
 
-// Default tour configuration
-const DEFAULT_STEP_DURATION = 5000;
+// Default tour configuration - longer base duration for comprehensive tours
+// This can be adjusted by the TourPlayer's speed control
+const DEFAULT_STEP_DURATION = 8000;
 
 export class GuidedTourService {
   private static instance: GuidedTourService;
@@ -35,6 +38,7 @@ export class GuidedTourService {
   private onStepChangeCallbacks: Set<(step: TourStep | null, index: number) => void> = new Set();
   private onTourEndCallbacks: Set<() => void> = new Set();
   private onSpeakCallbacks: Set<(text: string) => void> = new Set();
+  private isTransitioning: boolean = false; // Debounce flag to prevent rapid transitions
 
   private constructor() {
     this.state = {
@@ -75,15 +79,21 @@ export class GuidedTourService {
           id: 'tour-nav',
           target: this.getSelector(navElement),
           title: 'Navigation',
-          description: 'Use the navigation menu to jump to different sections of the page.',
+          description: 'The navigation menu with links to quickly jump to any section of the page.',
           action: 'highlight',
-          voiceScript: 'At the top you\'ll find the navigation menu. You can use these links to quickly jump to any section.',
         });
       }
     }
 
-    // Section steps
-    for (const section of pageMap.sections) {
+    // Section steps - sort by visual position (top to bottom)
+    const sortedSections = [...pageMap.sections].sort((a, b) => {
+      // Sort by vertical position first, then horizontal
+      const topDiff = a.boundingRect.top - b.boundingRect.top;
+      if (Math.abs(topDiff) > 50) return topDiff; // Significant vertical difference
+      return a.boundingRect.left - b.boundingRect.left;
+    });
+
+    for (const section of sortedSections) {
       if (steps.length >= maxSteps) break;
 
       // Skip very small sections
@@ -96,18 +106,19 @@ export class GuidedTourService {
     }
 
     // Contact/form step (if present)
-    const contactForm = pageMap.forms.find(f =>
-      f.name?.toLowerCase().includes('contact') ||
-      f.element.id.toLowerCase().includes('contact')
-    );
+    const contactForm = pageMap.forms.find(f => {
+      // Safety check: ensure name is a string before calling toLowerCase
+      const formName = typeof f.name === 'string' ? f.name.toLowerCase() : '';
+      const formId = f.element.id?.toLowerCase() || '';
+      return formName.includes('contact') || formId.includes('contact');
+    });
     if (contactForm && steps.length < maxSteps) {
       steps.push({
         id: 'tour-contact',
         target: this.getSelector(contactForm.element),
-        title: 'Contact',
-        description: 'Use this form to get in touch.',
+        title: 'Contact Form',
+        description: 'A form for getting in touch directly.',
         action: 'spotlight',
-        voiceScript: 'Here\'s the contact form. You can fill this out to send a message.',
       });
     }
 
@@ -152,6 +163,9 @@ export class GuidedTourService {
   async nextStep(): Promise<void> {
     if (!this.state.tourConfig || !this.state.isActive) return;
 
+    // Prevent rapid transitions
+    if (this.isTransitioning) return;
+
     // Clear any pending timeout
     if (this.stepTimeout) {
       clearTimeout(this.stepTimeout);
@@ -174,11 +188,21 @@ export class GuidedTourService {
     this.state.currentStepIndex = nextIndex;
     const step = this.state.tourConfig.steps[nextIndex];
 
-    // Execute step
-    await this.executeStep(step);
+    // Set transitioning flag
+    this.isTransitioning = true;
 
-    // Notify callbacks
-    this.notifyStepChange(step, nextIndex);
+    try {
+      // Execute step
+      await this.executeStep(step);
+
+      // Notify callbacks
+      this.notifyStepChange(step, nextIndex);
+    } finally {
+      // Clear transitioning flag after a delay
+      setTimeout(() => {
+        this.isTransitioning = false;
+      }, 600);
+    }
   }
 
   /**
@@ -186,6 +210,8 @@ export class GuidedTourService {
    */
   async previousStep(): Promise<void> {
     if (!this.state.tourConfig || !this.state.isActive) return;
+
+    if (this.isTransitioning) return;
 
     if (this.stepTimeout) {
       clearTimeout(this.stepTimeout);
@@ -199,8 +225,17 @@ export class GuidedTourService {
     this.state.currentStepIndex = prevIndex;
     const step = this.state.tourConfig.steps[prevIndex];
 
-    await this.executeStep(step);
-    this.notifyStepChange(step, prevIndex);
+    // Set transitioning flag
+    this.isTransitioning = true;
+
+    try {
+      await this.executeStep(step);
+      this.notifyStepChange(step, prevIndex);
+    } finally {
+      setTimeout(() => {
+        this.isTransitioning = false;
+      }, 600);
+    }
   }
 
   /**
@@ -208,6 +243,8 @@ export class GuidedTourService {
    */
   async skipToStep(stepIdOrIndex: string | number): Promise<void> {
     if (!this.state.tourConfig || !this.state.isActive) return;
+
+    if (this.isTransitioning) return;
 
     if (this.stepTimeout) {
       clearTimeout(this.stepTimeout);
@@ -227,8 +264,17 @@ export class GuidedTourService {
     this.state.currentStepIndex = index;
     const step = this.state.tourConfig.steps[index];
 
-    await this.executeStep(step);
-    this.notifyStepChange(step, index);
+    // Set transitioning flag
+    this.isTransitioning = true;
+
+    try {
+      await this.executeStep(step);
+      this.notifyStepChange(step, index);
+    } finally {
+      setTimeout(() => {
+        this.isTransitioning = false;
+      }, 600);
+    }
   }
 
   /**
@@ -273,7 +319,9 @@ export class GuidedTourService {
 
     // Notify callbacks
     for (const callback of this.onTourEndCallbacks) {
-      callback();
+      try {
+        callback();
+      } catch { /* ignore callback errors */ }
     }
     this.notifyStepChange(null, -1);
   }
@@ -370,7 +418,7 @@ export class GuidedTourService {
     clearHighlights();
 
     // Wait a moment for visual transition
-    await this.sleep(100);
+    await this.sleep(200);
 
     // Execute highlight action
     switch (step.action) {
@@ -390,10 +438,18 @@ export class GuidedTourService {
         break;
     }
 
+    // Generate voice script dynamically using AI
+    const voiceScript = await generateActionResponse('tour_step', {
+      section: step.title,
+      description: step.description,
+    });
+
     // Speak voice script
-    if (step.voiceScript) {
+    if (voiceScript) {
       for (const callback of this.onSpeakCallbacks) {
-        callback(step.voiceScript);
+        try {
+          callback(voiceScript);
+        } catch { /* ignore callback errors */ }
       }
     }
 
@@ -411,30 +467,36 @@ export class GuidedTourService {
 
     const titleLower = title.toLowerCase();
     let description = '';
-    let voiceScript = '';
 
-    // Generate contextual descriptions
+    // Provide contextual descriptions that the AI will use to generate dynamic voice scripts
     if (titleLower.includes('hero') || section.level === 1) {
-      description = 'The main introduction to this page.';
-      voiceScript = `This is the main section. ${title}.`;
+      description = 'The main introduction showcasing the website\'s purpose. Features call-to-action buttons for exploring content.';
     } else if (titleLower.includes('about')) {
-      description = 'Learn more about the background and story.';
-      voiceScript = 'Here\'s the about section where you can learn more about the background and experience.';
+      description = 'Background information and story. Learn more about who is behind this website.';
     } else if (titleLower.includes('project') || titleLower.includes('work') || titleLower.includes('portfolio')) {
-      description = 'Browse through the portfolio of work and projects.';
-      voiceScript = 'The projects section showcases the work. You can explore different projects here.';
+      description = 'A collection of projects showcasing work and capabilities. Each card provides details and may have live demos.';
     } else if (titleLower.includes('skill') || titleLower.includes('technolog') || titleLower.includes('expertise')) {
-      description = 'Technical skills and areas of expertise.';
-      voiceScript = 'This section covers the technical skills and technologies used.';
-    } else if (titleLower.includes('experience') || titleLower.includes('career')) {
-      description = 'Professional experience and career history.';
-      voiceScript = 'Here you can see the professional experience and career journey.';
+      description = 'Technical expertise breakdown showing proficiency in various technologies and tools.';
+    } else if (titleLower.includes('experience') || titleLower.includes('career') || titleLower.includes('professional')) {
+      description = 'Professional timeline showing career history and work experience.';
     } else if (titleLower.includes('contact')) {
-      description = 'Get in touch or send a message.';
-      voiceScript = 'The contact section. You can reach out here.';
+      description = 'Ways to connect: contact form, social links, and direct contact information.';
+    } else if (titleLower.includes('service') || titleLower.includes('offer')) {
+      description = 'Services offered and what this website can help you with.';
+    } else if (titleLower.includes('testimonial') || titleLower.includes('review')) {
+      description = 'Reviews and testimonials from clients or colleagues.';
+    } else if (titleLower.includes('faq') || titleLower.includes('question')) {
+      description = 'Frequently asked questions with helpful answers.';
+    } else if (titleLower.includes('blog') || titleLower.includes('article') || titleLower.includes('post')) {
+      description = 'Blog posts or articles with insights and knowledge sharing.';
+    } else if (titleLower.includes('pricing') || titleLower.includes('plan')) {
+      description = 'Pricing information and available plans or packages.';
+    } else if (titleLower.includes('feature')) {
+      description = 'Key features and capabilities highlighted.';
+    } else if (titleLower.includes('team') || titleLower.includes('member')) {
+      description = 'Team members and their roles.';
     } else {
       description = `The ${title} section of this page.`;
-      voiceScript = `Here's the ${title} section.`;
     }
 
     return {
@@ -443,23 +505,26 @@ export class GuidedTourService {
       title,
       description,
       action: 'spotlight',
-      voiceScript,
+      waitForInteraction: false, // TourPlayer manages timing now
     };
   }
 
   private getSelector(element: HTMLElement): string {
-    if (element.id) return `#${element.id}`;
+    // Use CSS.escape for IDs with special characters
+    if (element.id) return `#${CSS.escape(element.id)}`;
 
-    // Try data attributes
+    // Try data attributes (escape for special characters)
     const dataSection = element.getAttribute('data-section');
-    if (dataSection) return `[data-section="${dataSection}"]`;
+    if (dataSection) return `[data-section="${CSS.escape(dataSection)}"]`;
 
     // Build a selector based on tag and class
     const tag = element.tagName.toLowerCase();
-    const firstClass = element.className?.split(' ')[0];
+    // Handle SVG elements where className is SVGAnimatedString
+    const className = typeof element.className === 'string' ? element.className : '';
+    const firstClass = className.trim().split(/\s+/)[0];
 
     if (firstClass) {
-      return `${tag}.${firstClass}`;
+      return `${tag}.${CSS.escape(firstClass)}`;
     }
 
     // Fallback to nth-child
@@ -475,7 +540,9 @@ export class GuidedTourService {
 
   private notifyStepChange(step: TourStep | null, index: number): void {
     for (const callback of this.onStepChangeCallbacks) {
-      callback(step, index);
+      try {
+        callback(step, index);
+      } catch { /* ignore callback errors */ }
     }
   }
 
