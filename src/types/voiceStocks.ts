@@ -257,7 +257,7 @@ export interface TourStep {
   title: string;
   description: string;
   action: 'spotlight' | 'scroll' | 'point' | 'highlight';
-  voiceScript: string;
+  voiceScript?: string; // Optional - can be generated dynamically by AI
   position?: 'top' | 'bottom' | 'left' | 'right';
   waitForInteraction?: boolean;
 }
