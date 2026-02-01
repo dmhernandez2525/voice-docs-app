@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import DocumentationPage from './components/DocumentationPage';
+import { AppEntry } from './components/AppEntry';
 import { LandingPage } from './components/LandingPage';
 import { VoiceStocksDemo } from './pages/VoiceStocksDemo';
 import { NotificationProvider } from './components/NotificationProvider';
@@ -16,7 +16,7 @@ function App() {
             <div className="App">
               <Routes>
                 <Route path="/" element={<LandingPage />} />
-                <Route path="/app" element={<DocumentationPage />} />
+                <Route path="/app" element={<AppEntry />} />
                 <Route path="/voice-stocks-demo" element={<VoiceStocksDemo />} />
               </Routes>
             </div>

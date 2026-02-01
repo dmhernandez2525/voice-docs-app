@@ -5,7 +5,7 @@
  * the full voice-enabled documentation features without authentication.
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
+import { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { ConversationMessage } from '../types/voiceStocks';
 import {
@@ -49,12 +49,14 @@ function demoReducer(state: DemoState, action: DemoAction): DemoState {
       return { ...state, isTourActive: true, tourStep: 0 };
     case 'END_TOUR':
       return { ...state, isTourActive: false };
-    case 'NEXT_TOUR_STEP':
+    case 'NEXT_TOUR_STEP': {
       const nextStep = Math.min(state.tourStep + 1, demoTourSteps.length - 1);
       return { ...state, tourStep: nextStep };
-    case 'PREV_TOUR_STEP':
+    }
+    case 'PREV_TOUR_STEP': {
       const prevStep = Math.max(state.tourStep - 1, 0);
       return { ...state, tourStep: prevStep };
+    }
     case 'GO_TO_TOUR_STEP':
       return { ...state, tourStep: Math.max(0, Math.min(action.payload, demoTourSteps.length - 1)) };
     case 'TOGGLE_VOICE':
@@ -222,6 +224,7 @@ Try one of these topics to see a detailed response! You can also explore the dem
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDemo(): DemoContextValue {
   const context = useContext(DemoContext);
   if (!context) {
@@ -230,6 +233,7 @@ export function useDemo(): DemoContextValue {
   return context;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDemoOptional(): DemoContextValue | null {
   return useContext(DemoContext);
 }
