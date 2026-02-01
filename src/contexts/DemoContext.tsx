@@ -5,7 +5,7 @@
  * the full voice-enabled documentation features without authentication.
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
+import { createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { ConversationMessage } from '../types/voiceStocks';
 import {
