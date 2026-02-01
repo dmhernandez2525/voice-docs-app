@@ -17,7 +17,7 @@ services:
   # =============================================
   - type: web
     name: voice-docs-site
-    env: static
+    runtime: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     pullRequestPreviewsEnabled: true
