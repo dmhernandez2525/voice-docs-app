@@ -13,16 +13,17 @@ function customRender(
   ui: ReactElement,
   options?: CustomRenderOptions
 ): RenderResult & { user: ReturnType<typeof userEvent.setup> } {
-  const user = userEvent.setup();
-
   // Add any providers here (ThemeProvider, etc.)
   const Wrapper = ({ children }: { children: React.ReactNode }) => {
     return <>{children}</>;
   };
 
+  const renderResult = render(ui, { wrapper: Wrapper, ...options });
+  const user = userEvent.setup({ document: document });
+
   return {
     user,
-    ...render(ui, { wrapper: Wrapper, ...options }),
+    ...renderResult,
   };
 }
 
